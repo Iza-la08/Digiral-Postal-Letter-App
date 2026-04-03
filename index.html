@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>iLetterU</title>
+    <link rel="stylesheet" href="index.css">
+    <link rel="manifest" href="manifest.json">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Caveat:wght@400;600&family=Dancing+Script:wght@400;600&family=Indie+Flower&display=swap" rel="stylesheet">
+    <meta name="theme-color" content="#0f172a">
+</head>
+<body>
+    <!-- Avatar Selection Modal -->
+    <div id="avatar-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Choose an Avatar</h3>
+                <button type="button" class="close-modal-btn" id="close-avatar-btn">✕</button>
+            </div>
+            <div class="avatar-grid" id="avatar-grid">
+                <!-- Avatars dynamically injected -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Letter Selection Modal -->
+    <div id="letter-modal" class="modal-overlay" style="display: none;">
+        <div class="modal-content file-modal">
+            <div class="modal-header">
+                <h3>Select a Letter Background</h3>
+                <button type="button" class="close-modal-btn" id="close-letter-btn">✕</button>
+            </div>
+            <div class="avatar-grid" id="letter-grid">
+                <!-- Letters dynamically injected -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Audio Trigger for Letters -->
+    <audio id="paper-sound" src="Sounds effect/paper_sound.mp3"></audio>
+
+    <!-- Letter Writer Immersive Modal -->
+    <div id="writer-modal" class="modal-overlay" style="display: none; z-index: 1000;">
+        <div class="writer-container">
+            <div class="writer-toolbar">
+                <select id="writer-font-opt" class="writer-select">
+                    <option value="'Inter', sans-serif">Standard Font</option>
+                    <option value="'Caveat', cursive">Auth. Cursive (Caveat)</option>
+                    <option value="'Dancing Script', cursive">Classic Script (Dancing)</option>
+                    <option value="'Indie Flower', cursive">Marker Style (Indie)</option>
+                </select>
+                <select id="writer-size-opt" class="writer-select">
+                    <option value="1rem">Small Size</option>
+                    <option value="1.3rem" selected>Medium Size</option>
+                    <option value="1.6rem">Large Size</option>
+                    <option value="2rem">Huge Size</option>
+                </select>
+                <div style="flex: 1;"></div>
+                <button type="button" class="close-modal-btn" id="close-writer-btn">✕ Exit</button>
+            </div>
+            <div class="letter-paper-canvas">
+                <textarea id="writer-textarea" spellcheck="false" placeholder="Dear Penpal, start writing your thoughts here... Automatically saved."></textarea>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-container">
+        <form class="login-form" id="login-form">
+            <h2>Sign In</h2>
+            <div class="input-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" required placeholder="your@email.com">
+            </div>
+            <div class="input-group">
+                <label for="password">Password</label>
+                <div class="password-wrapper">
+                    <input type="password" id="password" required placeholder="••••••••" minlength="6">
+                    <button type="button" id="login-pass-toggle" class="pass-toggle-btn">👁️</button>
+                </div>
+            </div>
+            <button type="submit" class="login-btn">Log In</button>
+        </form>
+    </div>
+
+    <div id="app" class="app-container" style="display: none;">
+        <!-- Phone App content goes here -->
+        <header class="app-header">
+            <div id="header-avatar" class="header-avatar-container" style="display: none;" title="View Profile">
+                <img src="" id="header-active-pic" class="header-avatar-pic" style="display: none;">
+                <div id="header-default-pic" class="header-avatar-default">👤</div>
+            </div>
+            <img src="iLetterU.PNG" alt="iLetterU Logo" class="app-title-image">
+            <div id="user-badge" class="user-badge" style="display: none;">
+                👋 
+                <div class="nickname-container" style="position: relative; display: inline-flex; align-items: center;">
+                    <input type="text" id="nickname-input" class="nickname-input" maxlength="30" autocomplete="off" spellcheck="false" style="color: transparent; caret-color: white;">
+                    <div id="phantom-wavy-display" style="position: absolute; left: 13px; pointer-events: none; white-space: pre; font-size: 1rem;"></div>
+                </div>
+            </div>
+        </header>
+        
+        <main class="app-content">
+            <!-- Home View -->
+            <div id="view-home" class="view-section active">
+                <div id="letters-thread-container" class="letters-thread-container">
+                    <!-- Thread dynamically injected here -->
+                </div>
+            </div>
+
+            <!-- Inbox View -->
+            <div id="view-inbox" class="view-section" style="display: none;">
+                <div style="text-align: center; color: #94a3b8; animation: fadeIn 0.8s ease;">No new letters.</div>
+            </div>
+
+            <!-- Profile View -->
+            <div id="view-profile" class="view-section" style="display: none;">
+                <div class="profile-card">
+                    <div class="profile-picture-container" id="profile-pic-btn">
+                        <img src="" id="active-profile-pic" class="profile-picture" style="display: none;">
+                        <div id="default-profile-pic" class="profile-picture">👤</div>
+                        <div class="edit-badge">✏️</div>
+                    </div>
+                    <h3>Your Informations</h3>
+                    <div class="profile-field">
+                        <label>Nickname</label>
+                        <div class="nickname-container" style="position: relative; display: flex; align-items: center; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px 12px; margin-top: 6px;">
+                            <input type="text" id="profile-nickname-input" class="nickname-input" maxlength="30" autocomplete="off" spellcheck="false" style="color: transparent; caret-color: white; width: 100%; border: none; background: transparent; padding: 0; outline: none; font-size: 1rem;">
+                            <div id="profile-phantom-wavy" style="position: absolute; left: 12px; pointer-events: none; white-space: pre; font-size: 1rem;"></div>
+                        </div>
+                    </div>
+                    <div class="profile-field">
+                        <label>Email</label>
+                        <div class="password-display-wrapper">
+                            <p id="profile-email">---</p>
+                            <button type="button" id="profile-email-toggle" class="pass-toggle-btn">👁️</button>
+                        </div>
+                    </div>
+                    <div class="profile-field">
+                        <label>Password</label>
+                        <div class="password-display-wrapper">
+                            <p id="profile-password">---</p>
+                            <button type="button" id="profile-pass-toggle" class="pass-toggle-btn">👁️</button>
+                        </div>
+                    </div>
+                    <button id="logout-btn" class="logout-btn">Log Out</button>
+                </div>
+            </div>
+        </main>
+        
+        <nav class="app-nav">
+            <button class="nav-btn active">Home</button>
+            <button class="nav-btn">Inbox</button>
+        </nav>
+    </div>
+    <script src="index.js" type="module"></script>
+</body>
+</html>
