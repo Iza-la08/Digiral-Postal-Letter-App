@@ -701,8 +701,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const jsonStr = JSON.stringify(payload);
             const compressed = window.LZString.compressToEncodedURIComponent(jsonStr);
 
-            // Build URL
-            const baseUrl = window.location.href.replace(/\/[^\/]*$/, '/');
+            // Build URL — handle GitHub Pages and local paths correctly
+            let baseUrl = window.location.origin + window.location.pathname;
+            // Remove trailing filename (index.html, etc.) to get directory
+            if (baseUrl.match(/\/[^\/]*\.[^\/]*$/)) {
+                baseUrl = baseUrl.replace(/\/[^\/]*$/, '/');
+            } else if (!baseUrl.endsWith('/')) {
+                baseUrl += '/';
+            }
             const shareUrl = baseUrl + 'share.html#data=' + compressed;
 
             // Build friendly message with nickname
@@ -718,36 +724,21 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Copy link as rich text with embedded hyperlink
+    // Copy link
     if (shareCopyBtn) {
         shareCopyBtn.addEventListener('click', async () => {
             const url = shareLinkText.dataset.url;
             const nickname = shareLinkText.dataset.nickname || 'Someone';
-
-            // Rich HTML version: "Nickname sent you an iLetter!" with iLetter as link
-            const htmlContent = `✉️ ${nickname} sent you an <a href="${url}">iLetter</a>!`;
-            // Plain text fallback
-            const plainContent = `✉️ ${nickname} sent you an iLetter!\n${url}`;
+            const copyText = `✉️ ${nickname} sent you an iLetter!\n${url}`;
 
             try {
-                const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
-                const textBlob = new Blob([plainContent], { type: 'text/plain' });
-                await navigator.clipboard.write([
-                    new ClipboardItem({
-                        'text/html': htmlBlob,
-                        'text/plain': textBlob
-                    })
-                ]);
+                await navigator.clipboard.writeText(copyText);
             } catch (e) {
-                // Fallback: copy plain text
-                try {
-                    await navigator.clipboard.writeText(plainContent);
-                } catch (e2) {
-                    shareLinkText.value = plainContent;
-                    shareLinkText.select();
-                    document.execCommand('copy');
-                    shareLinkText.value = `✉️ ${nickname} sent you an iLetter!`;
-                }
+                // Fallback
+                shareLinkText.value = copyText;
+                shareLinkText.select();
+                document.execCommand('copy');
+                shareLinkText.value = `✉️ ${nickname} sent you an iLetter!`;
             }
             shareCopyFeedback.style.display = 'block';
             setTimeout(() => { shareCopyFeedback.style.display = 'none'; }, 3000);
