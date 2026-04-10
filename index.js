@@ -705,7 +705,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const baseUrl = window.location.href.replace(/\/[^\/]*$/, '/');
             const shareUrl = baseUrl + 'share.html#data=' + compressed;
 
-            shareLinkText.value = shareUrl;
+            // Build friendly message with nickname
+            const nickname = db[currentUserEmail].nickname || 'Someone';
+            const friendlyMsg = `✉️ ${nickname} sent you an iLetter!\n\n${shareUrl}`;
+
+            shareLinkText.value = friendlyMsg;
             shareLinkBox.style.display = 'block';
             shareCopyFeedback.style.display = 'none';
         });
