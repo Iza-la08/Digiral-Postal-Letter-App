@@ -1,14 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>iLetterU</title>
+    <meta name="description" content="A realistic digital postal letter experience. Write, share, and schedule beautiful letters.">
     <link rel="stylesheet" href="index.css">
     <link rel="manifest" href="manifest.json">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Caveat:wght@400;600&family=Dancing+Script:wght@400;600&family=Indie+Flower&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Caveat:wght@400;600&family=Dancing+Script:wght@400;600&family=Indie+Flower&family=Outfit:wght@300;400;600;700&display=swap"
+        rel="stylesheet">
     <meta name="theme-color" content="#0f172a">
 </head>
+
 <body>
     <!-- Avatar Selection Modal -->
     <div id="avatar-modal" class="modal-overlay" style="display: none;">
@@ -36,6 +42,88 @@
         </div>
     </div>
 
+    <!-- Share Configuration Modal -->
+    <div id="share-modal" class="modal-overlay" style="display: none; z-index: 1100;">
+        <div class="modal-content share-modal-content">
+            <div class="modal-header">
+                <h3>📤 Share This Letter</h3>
+                <button type="button" class="close-modal-btn" id="close-share-btn">✕</button>
+            </div>
+            <div class="share-form">
+                <!-- Secret Code -->
+                <div class="share-field">
+                    <label>🔐 Secret Code</label>
+                    <div class="share-code-row">
+                        <input type="text" id="share-code-input" class="share-input" placeholder="Enter a secret code..." maxlength="30">
+                        <button type="button" id="share-code-gen" class="share-gen-btn">🎲 Auto</button>
+                    </div>
+                </div>
+
+                <!-- Schedule Toggle -->
+                <div class="share-field">
+                    <label>
+                        <input type="checkbox" id="share-schedule-toggle"> ⏰ Schedule Delivery
+                    </label>
+                </div>
+
+                <!-- Schedule Options (hidden by default) -->
+                <div id="share-schedule-options" class="share-schedule-options" style="display: none;">
+                    <div class="share-field">
+                        <label>📅 Date & Time</label>
+                        <input type="datetime-local" id="share-datetime" class="share-input">
+                    </div>
+                    <div class="share-field">
+                        <label>🌍 Time Zone</label>
+                        <select id="share-timezone" class="share-input">
+                            <option value="America/Los_Angeles">Pacific (PST/PDT)</option>
+                            <option value="America/Denver">Mountain (MST/MDT)</option>
+                            <option value="America/Chicago">Central (CST/CDT)</option>
+                            <option value="America/New_York">Eastern (EST/EDT)</option>
+                            <option value="Europe/London">UK (GMT/BST)</option>
+                            <option value="Europe/Paris">Central EU (CET/CEST)</option>
+                            <option value="Asia/Tokyo">Japan (JST)</option>
+                            <option value="Asia/Manila">Philippines (PHT)</option>
+                            <option value="Asia/Kolkata">India (IST)</option>
+                            <option value="Australia/Sydney">Australia (AEST/AEDT)</option>
+                            <option value="Pacific/Auckland">New Zealand (NZST/NZDT)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Custom Unlock Message -->
+                <div class="share-field">
+                    <label>🎉 Unlock Message</label>
+                    <input type="text" id="share-unlock-msg" class="share-input" placeholder="Open Now!" maxlength="60">
+                </div>
+
+                <div class="share-field share-style-row">
+                    <select id="share-msg-font" class="share-input share-input-sm">
+                        <option value="'Outfit', sans-serif">Clean</option>
+                        <option value="'Caveat', cursive">Handwritten</option>
+                        <option value="'Dancing Script', cursive">Script</option>
+                    </select>
+                    <input type="color" id="share-msg-color" class="share-color-picker" value="#ffffff">
+                    <select id="share-msg-size" class="share-input share-input-sm">
+                        <option value="1.8rem">Normal</option>
+                        <option value="2.4rem" selected>Large</option>
+                        <option value="3.2rem">Huge</option>
+                    </select>
+                </div>
+
+                <!-- Generate Link Button -->
+                <button type="button" id="share-generate-btn" class="share-generate-btn">🔗 Generate Link</button>
+
+                <!-- Generated Link Display -->
+                <div id="share-link-box" class="share-link-box" style="display: none;">
+                    <p class="share-link-label">Your shareable link:</p>
+                    <textarea id="share-link-text" class="share-link-text" readonly></textarea>
+                    <button type="button" id="share-copy-btn" class="share-copy-btn">📋 Copy Link</button>
+                    <p id="share-copy-feedback" class="share-copy-feedback" style="display: none;">✅ Copied!</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Audio Trigger for Letters -->
     <audio id="paper-sound" src="Sounds effect/paper_sound.mp3"></audio>
 
@@ -44,8 +132,8 @@
         <div class="writer-container">
             <div class="writer-toolbar">
                 <select id="writer-font-opt" class="writer-select">
+                    <option value="'Caveat', cursive" selected>Auth. Cursive (Caveat)</option>
                     <option value="'Inter', sans-serif">Standard Font</option>
-                    <option value="'Caveat', cursive">Auth. Cursive (Caveat)</option>
                     <option value="'Dancing Script', cursive">Classic Script (Dancing)</option>
                     <option value="'Indie Flower', cursive">Marker Style (Indie)</option>
                 </select>
@@ -56,18 +144,29 @@
                     <option value="2rem">Huge Size</option>
                 </select>
                 <div style="flex: 1;"></div>
+                <button type="button" class="writer-action-btn" id="share-open-btn" title="Share Letter">📤</button>
                 <button type="button" class="close-modal-btn" id="close-writer-btn">✕ Exit</button>
             </div>
-            <div class="letter-paper-canvas">
-                <textarea id="writer-textarea" spellcheck="false" placeholder="Dear Penpal, start writing your thoughts here... Automatically saved."></textarea>
+            <div class="writer-scroll-area" id="writer-scroll-area">
+                <div class="paper-top-cover" id="writer-top-cover">
+                    <img src="" id="writer-top-img" alt="">
+                </div>
+                <div class="paper-middle" id="writer-paper-middle">
+                    <div id="writer-content" class="writer-content-editable" contenteditable="true"
+                        spellcheck="false" data-placeholder="Dear Penpal, start writing your thoughts here... Automatically saved."></div>
+                </div>
+                <div class="paper-bottom-cover" id="writer-bottom-cover">
+                    <img src="" id="writer-bottom-img" alt="">
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Login Screen -->
+    <!-- Auth Screen -->
     <div id="login-screen" class="login-container">
-        <form class="login-form" id="login-form">
-            <h2>Sign In</h2>
+        <form class="login-form" id="login-form" autocomplete="off">
+            <h2 id="auth-title">Sign In</h2>
+            <p id="auth-error" class="auth-error" style="display: none;"></p>
             <div class="input-group">
                 <label for="email">Email</label>
                 <input type="email" id="email" required placeholder="your@email.com">
@@ -79,12 +178,22 @@
                     <button type="button" id="login-pass-toggle" class="pass-toggle-btn">👁️</button>
                 </div>
             </div>
-            <button type="submit" class="login-btn">Log In</button>
+            <div class="input-group" id="confirm-pass-group" style="display: none;">
+                <label for="confirm-password">Confirm Password</label>
+                <div class="password-wrapper">
+                    <input type="password" id="confirm-password" placeholder="••••••••" minlength="6">
+                    <button type="button" id="confirm-pass-toggle" class="pass-toggle-btn">👁️</button>
+                </div>
+            </div>
+            <button type="submit" class="login-btn" id="auth-submit-btn">Log In</button>
+            <div class="auth-toggle-row">
+                <span id="auth-toggle-text">Don't have an account?</span>
+                <button type="button" id="auth-toggle-btn" class="auth-toggle-btn">Sign Up</button>
+            </div>
         </form>
     </div>
 
     <div id="app" class="app-container" style="display: none;">
-        <!-- Phone App content goes here -->
         <header class="app-header">
             <div id="header-avatar" class="header-avatar-container" style="display: none;" title="View Profile">
                 <img src="" id="header-active-pic" class="header-avatar-pic" style="display: none;">
@@ -92,14 +201,17 @@
             </div>
             <img src="iLetterU.PNG" alt="iLetterU Logo" class="app-title-image">
             <div id="user-badge" class="user-badge" style="display: none;">
-                👋 
+                👋
                 <div class="nickname-container" style="position: relative; display: inline-flex; align-items: center;">
-                    <input type="text" id="nickname-input" class="nickname-input" maxlength="30" autocomplete="off" spellcheck="false" style="color: transparent; caret-color: white;">
-                    <div id="phantom-wavy-display" style="position: absolute; left: 13px; pointer-events: none; white-space: pre; font-size: 1rem;"></div>
+                    <input type="text" id="nickname-input" class="nickname-input" maxlength="30" autocomplete="off"
+                        spellcheck="false" style="color: transparent; caret-color: white;">
+                    <div id="phantom-wavy-display"
+                        style="position: absolute; left: 13px; pointer-events: none; white-space: pre; font-size: 1rem;">
+                    </div>
                 </div>
             </div>
         </header>
-        
+
         <main class="app-content">
             <!-- Home View -->
             <div id="view-home" class="view-section active">
@@ -110,7 +222,13 @@
 
             <!-- Inbox View -->
             <div id="view-inbox" class="view-section" style="display: none;">
-                <div style="text-align: center; color: #94a3b8; animation: fadeIn 0.8s ease;">No new letters.</div>
+                <div class="inbox-header">
+                    <h3>📬 Mailbox</h3>
+                    <p class="inbox-subtitle">Letters you've received</p>
+                </div>
+                <div id="inbox-letters-list" class="inbox-letters-list">
+                    <!-- Received letters rendered here -->
+                </div>
             </div>
 
             <!-- Profile View -->
@@ -121,12 +239,17 @@
                         <div id="default-profile-pic" class="profile-picture">👤</div>
                         <div class="edit-badge">✏️</div>
                     </div>
-                    <h3>Your Informations</h3>
+                    <h3>Informations</h3>
                     <div class="profile-field">
                         <label>Nickname</label>
-                        <div class="nickname-container" style="position: relative; display: flex; align-items: center; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px 12px; margin-top: 6px;">
-                            <input type="text" id="profile-nickname-input" class="nickname-input" maxlength="30" autocomplete="off" spellcheck="false" style="color: transparent; caret-color: white; width: 100%; border: none; background: transparent; padding: 0; outline: none; font-size: 1rem;">
-                            <div id="profile-phantom-wavy" style="position: absolute; left: 12px; pointer-events: none; white-space: pre; font-size: 1rem;"></div>
+                        <div class="nickname-container"
+                            style="position: relative; display: flex; align-items: center; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px 12px; margin-top: 6px;">
+                            <input type="text" id="profile-nickname-input" class="nickname-input" maxlength="30"
+                                autocomplete="off" spellcheck="false"
+                                style="color: transparent; caret-color: white; width: 100%; border: none; background: transparent; padding: 0; outline: none; font-size: 1rem;">
+                            <div id="profile-phantom-wavy"
+                                style="position: absolute; left: 12px; pointer-events: none; white-space: pre; font-size: 1rem;">
+                            </div>
                         </div>
                     </div>
                     <div class="profile-field">
@@ -147,12 +270,14 @@
                 </div>
             </div>
         </main>
-        
+
         <nav class="app-nav">
             <button class="nav-btn active">Home</button>
             <button class="nav-btn">Inbox</button>
         </nav>
     </div>
-    <script src="index.js" type="module"></script>
+    <script src="share.js"></script>
+    <script src="index.js"></script>
 </body>
+
 </html>

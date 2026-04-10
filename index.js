@@ -1,93 +1,240 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Navigation and Elements setup
+    // ==========================================
+    // CORE SETUP
+    // ==========================================
     const navBtns = document.querySelectorAll('.nav-btn');
     const appContainer = document.getElementById('app');
     const loginScreen = document.getElementById('login-screen');
     const loginForm = document.getElementById('login-form');
-    let currentUserEmail = null;
 
-    // Helper functions for DB
-    function getUsersDB() {
-        const dbStr = localStorage.getItem('iLetterU_usersDB');
-        return dbStr ? JSON.parse(dbStr) : {};
-    }
-    
-    function saveUserDB(db) {
-        localStorage.setItem('iLetterU_usersDB', JSON.stringify(db));
+    let sessionToken = localStorage.getItem('iLetterU_token') || null;
+    let currentUser = null; // { id, email, nickname, avatar }
+    let lettersCache = []; // local copy of letters
+    let inboxCache = []; // local copy of inbox
+
+    // ==========================================
+    // API HELPERS
+    // ==========================================
+    async function api(method, url, body = null) {
+        const opts = {
+            method,
+            headers: { 'Content-Type': 'application/json' }
+        };
+        if (sessionToken) {
+            opts.headers['X-Session-Token'] = sessionToken;
+        }
+        if (body) {
+            opts.body = JSON.stringify(body);
+        }
+        const res = await fetch(url, opts);
+        const data = await res.json();
+        if (!res.ok) {
+            throw { status: res.status, message: data.error || 'Unknown error' };
+        }
+        return data;
     }
 
-    // 1. Session check on load
-    const savedStr = localStorage.getItem('iLetterU_session');
-    if (savedStr) {
+    // ==========================================
+    // AUTH MODE TOGGLE (Login ↔ Sign Up)
+    // ==========================================
+    let isSignUpMode = false;
+    const authTitle = document.getElementById('auth-title');
+    const authError = document.getElementById('auth-error');
+    const authSubmitBtn = document.getElementById('auth-submit-btn');
+    const authToggleBtn = document.getElementById('auth-toggle-btn');
+    const authToggleText = document.getElementById('auth-toggle-text');
+    const confirmPassGroup = document.getElementById('confirm-pass-group');
+    const confirmPassInput = document.getElementById('confirm-password');
+    const confirmPassToggle = document.getElementById('confirm-pass-toggle');
+
+    function setAuthMode(signUp) {
+        isSignUpMode = signUp;
+        authError.style.display = 'none';
+        if (signUp) {
+            authTitle.textContent = 'Create Account';
+            authSubmitBtn.textContent = 'Sign Up';
+            authToggleText.textContent = 'Already have an account?';
+            authToggleBtn.textContent = 'Log In';
+            confirmPassGroup.style.display = 'flex';
+            if (confirmPassInput) confirmPassInput.required = true;
+        } else {
+            authTitle.textContent = 'Sign In';
+            authSubmitBtn.textContent = 'Log In';
+            authToggleText.textContent = "Don't have an account?";
+            authToggleBtn.textContent = 'Sign Up';
+            confirmPassGroup.style.display = 'none';
+            if (confirmPassInput) confirmPassInput.required = false;
+        }
+    }
+
+    if (authToggleBtn) {
+        authToggleBtn.addEventListener('click', () => setAuthMode(!isSignUpMode));
+    }
+
+    // Confirm password eye toggle
+    if (confirmPassToggle && confirmPassInput) {
+        confirmPassToggle.addEventListener('click', () => {
+            const type = confirmPassInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            confirmPassInput.setAttribute('type', type);
+            confirmPassToggle.innerText = type === 'password' ? '👁️' : '🙈';
+        });
+    }
+
+    function showAuthError(msg) {
+        authError.textContent = msg;
+        authError.className = 'auth-error';
+        authError.style.display = 'block';
+    }
+
+    function showAuthSuccess(msg) {
+        authError.textContent = msg;
+        authError.className = 'auth-success';
+        authError.style.display = 'block';
+    }
+
+    // ==========================================
+    // SESSION CHECK (on page load)
+    // ==========================================
+    async function checkSession() {
+        if (!sessionToken) return false;
         try {
-            const sessionEmail = JSON.parse(savedStr);
-            const db = getUsersDB();
-            if(db[sessionEmail]) {
-                currentUserEmail = sessionEmail;
-                populateUser(db[currentUserEmail]);
-                loginScreen.style.display = 'none';
-                appContainer.style.display = 'flex';
-            }
-        } catch(e) {}
+            const data = await api('GET', '/api/me');
+            currentUser = data.user;
+            return true;
+        } catch (e) {
+            // Invalid session
+            localStorage.removeItem('iLetterU_token');
+            sessionToken = null;
+            return false;
+        }
     }
 
-    // 2. Handle Login Submit
-    loginForm.addEventListener('submit', (e) => {
+    // Initialize
+    (async () => {
+        const loggedIn = await checkSession();
+        if (loggedIn) {
+            await loadUserData();
+            populateUser();
+            loginScreen.style.display = 'none';
+            appContainer.style.display = 'flex';
+        }
+    })();
+
+    // ==========================================
+    // AUTH FORM HANDLER
+    // ==========================================
+    loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const email = document.getElementById('email').value;
+        const email = document.getElementById('email').value.trim();
         const password = document.getElementById('password').value;
 
-        if (email && password) {
-            const db = getUsersDB();
-            // Initialize or update user
-            if (!db[email]) {
-                db[email] = { email: email, password: password, nickname: "", letters: [] };
+        if (!email || !password) {
+            showAuthError('Please fill in all fields.');
+            return;
+        }
+
+        authSubmitBtn.disabled = true;
+        authSubmitBtn.textContent = isSignUpMode ? 'Creating...' : 'Logging in...';
+        authError.style.display = 'none';
+
+        try {
+            if (isSignUpMode) {
+                // --- SIGN UP ---
+                const confirmPass = confirmPassInput ? confirmPassInput.value : '';
+                if (password !== confirmPass) {
+                    showAuthError('Passwords do not match.');
+                    authSubmitBtn.disabled = false;
+                    authSubmitBtn.textContent = 'Sign Up';
+                    return;
+                }
+                if (password.length < 6) {
+                    showAuthError('Password must be at least 6 characters.');
+                    authSubmitBtn.disabled = false;
+                    authSubmitBtn.textContent = 'Sign Up';
+                    return;
+                }
+
+                const data = await api('POST', '/api/signup', { email, password });
+                sessionToken = data.token;
+                localStorage.setItem('iLetterU_token', sessionToken);
+                currentUser = data.user;
+                lettersCache = [];
+                inboxCache = [];
+
             } else {
-                db[email].password = password; 
+                // --- LOGIN ---
+                const data = await api('POST', '/api/login', { email, password });
+                sessionToken = data.token;
+                localStorage.setItem('iLetterU_token', sessionToken);
+                currentUser = data.user;
+                await loadUserData();
             }
-            saveUserDB(db);
 
-            // Establish Local Session
-            localStorage.setItem('iLetterU_session', JSON.stringify(email));
-            currentUserEmail = email;
-            
-            populateUser(db[email]);
+            populateUser();
 
-            // Transition beautifully
             loginScreen.style.animation = 'fadeOut 0.4s ease forwards';
             setTimeout(() => {
                 loginScreen.style.display = 'none';
                 appContainer.style.display = 'flex';
                 appContainer.style.animation = 'fadeIn 0.6s ease';
             }, 400);
+
+        } catch (err) {
+            showAuthError(err.message || 'Something went wrong. Please try again.');
+        } finally {
+            authSubmitBtn.disabled = false;
+            authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Log In';
         }
     });
 
-    let currentProfilePassword = "";
+    // ==========================================
+    // LOAD USER DATA FROM API
+    // ==========================================
+    async function loadUserData() {
+        try {
+            const [lettersRes, inboxRes] = await Promise.all([
+                api('GET', '/api/letters'),
+                api('GET', '/api/inbox')
+            ]);
+            lettersCache = lettersRes.letters || [];
+            inboxCache = inboxRes.inbox || [];
+        } catch (e) {
+            console.error('Failed to load user data:', e);
+        }
+    }
+
+    let currentProfilePassword = "••••••••";
     let currentProfileEmail = "";
-    
-    // Hardcoded List from Avatars Imagex folder
+
+    // ==========================================
+    // ASSET ARRAYS
+    // ==========================================
     const AVATARS = [
         "00943468-7202-4802-AF11-DBEC4D56AFA6.JPEG",
         "083A24EF-2045-4F05-B760-098E061F7EAA.JPEG",
         "1A49B1F3-C2C5-41ED-946F-B88B25BBCFBB.JPEG",
+        "1CAA6A67-5122-472A-8602-AFE17728AA8C.JPEG",
+        "224BD801-F2D2-4130-B2F4-F68ABA83C807.JPEG",
+        "65687E71-F1AB-4382-AD72-D57D41551716.JPEG",
         "6B650109-0589-4BB9-8567-7BC938DFBEEA.JPEG",
         "759D4ED3-F56D-414F-AFA8-28098BA29692.JPEG",
+        "7A3D879A-1225-4810-AD64-4AD4BFF4964B.JPEG",
         "7FD962FC-DA9B-4544-848E-C663753ABBD5.JPEG",
+        "8631BE5F-7811-4836-9716-5C54DA7176AC.JPEG",
         "BD80A122-02D4-4E9A-B9B0-617003D02410.JPEG",
         "BE560142-D801-4ACA-90DE-06DD9E8F47D9.JPEG",
+        "C9048FB9-012C-4980-8E93-9670D63C5B48.JPEG",
         "CA87C237-5D82-49F3-8887-FA63D2527DE8.JPEG"
     ];
 
     const LETTERS_OPT = [
-        "0332225D-658A-41E3-96B4-1A02F576021B.PNG",
-        "22526E2A-A1CF-4C8E-BE36-89240A38DCAA.PNG",
-        "31680764-45F4-4434-8382-BD45488FB058.PNG",
-        "491FF327-9B1F-4E23-8898-EC322F5A2D9C.PNG",
-        "4F7B763F-3324-4F2E-B81E-EFF7FA08A395.PNG",
-        "53D87EF8-6E50-46FC-A35D-C5EC146CF76F.PNG",
-        "D3A73407-E073-4D29-BF06-E787D606FFB9.PNG",
-        "F5EDF3F8-006F-4FAD-842B-A2019A410431.PNG"
+        "Lett1.PNG",
+        "Lett2.PNG",
+        "Lett3.JPEG",
+        "Lett4.PNG",
+        "Lett5.PNG",
+        "Lett6.PNG",
+        "Lett7.PNG"
     ];
 
     const LETTER_PROMPTS = [
@@ -98,50 +245,51 @@ document.addEventListener('DOMContentLoaded', () => {
         "Every story and memory begins with a conversation—so turn yours into a letter meant for someone."
     ];
 
-    // Populate user helper
-    function populateUser(data) {
+    // ==========================================
+    // POPULATE USER
+    // ==========================================
+    function populateUser() {
+        if (!currentUser) return;
+
         const badge = document.getElementById('user-badge');
         badge.style.display = 'flex';
-        
-        const headerAvaCont = document.getElementById('header-avatar');
-        if(headerAvaCont) headerAvaCont.style.display = 'flex';
 
-        // Set Avatar Picture
+        const headerAvaCont = document.getElementById('header-avatar');
+        if (headerAvaCont) headerAvaCont.style.display = 'flex';
+
         const defaultPic = document.getElementById('default-profile-pic');
         const activePic = document.getElementById('active-profile-pic');
         const hActivePic = document.getElementById('header-active-pic');
         const hDefaultPic = document.getElementById('header-default-pic');
 
-        if (data.avatar) {
-            activePic.src = "Avatars Imagex/" + data.avatar;
+        if (currentUser.avatar) {
+            activePic.src = "Avatars Imagex/" + currentUser.avatar;
             activePic.style.display = 'block';
             defaultPic.style.display = 'none';
-            if(hActivePic && hDefaultPic) {
-                hActivePic.src = "Avatars Imagex/" + data.avatar;
+            if (hActivePic && hDefaultPic) {
+                hActivePic.src = "Avatars Imagex/" + currentUser.avatar;
                 hActivePic.style.display = 'block';
                 hDefaultPic.style.display = 'none';
             }
         } else {
             activePic.style.display = 'none';
             defaultPic.style.display = 'flex';
-            if(hActivePic && hDefaultPic) {
+            if (hActivePic && hDefaultPic) {
                 hActivePic.style.display = 'none';
                 hDefaultPic.style.display = 'flex';
             }
         }
 
-        const nickname = data.nickname || "";
-        
+        const nickname = currentUser.nickname || "";
         const nickInput = document.getElementById('nickname-input');
         const profileNickInput = document.getElementById('profile-nickname-input');
-        if(nickInput) nickInput.value = nickname;
-        if(profileNickInput) profileNickInput.value = nickname;
+        if (nickInput) nickInput.value = nickname;
+        if (profileNickInput) profileNickInput.value = nickname;
 
         renderPhantomNickname(nickInput, document.getElementById('phantom-wavy-display'), "Please create the most silliest nickname", true);
         renderPhantomNickname(profileNickInput, document.getElementById('profile-phantom-wavy'), "Please create the most silliest nickname", false);
-        
-        // Obfuscating email for presentation
-        currentProfileEmail = data.email;
+
+        currentProfileEmail = currentUser.email;
         const emailParts = currentProfileEmail.split('@');
         let maskedEmail = currentProfileEmail;
         if (emailParts.length === 2 && emailParts[0].length > 2) {
@@ -149,18 +297,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         document.getElementById('profile-email').innerText = maskedEmail;
         const eToggle = document.getElementById('profile-email-toggle');
-        if(eToggle) eToggle.innerText = '👁️';
+        if (eToggle) eToggle.innerText = '👁️';
 
-        // Obfuscating password for presentation
-        currentProfilePassword = data.password;
-        document.getElementById('profile-password').innerText = "•".repeat(data.password.length);
+        // Password is hashed on server — show masked dots
+        currentProfilePassword = "••••••••";
+        document.getElementById('profile-password').innerText = "••••••••";
         const pToggle = document.getElementById('profile-pass-toggle');
-        if(pToggle) pToggle.innerText = '👁️';
+        if (pToggle) pToggle.innerText = '🔒';
 
-        renderLettersThread(data.letters || []);
+        renderLettersThread(lettersCache);
+        renderInbox(inboxCache);
     }
 
-    // Toggle logic for Login password
+    // ==========================================
+    // TOGGLE BUTTONS
+    // ==========================================
     const loginToggle = document.getElementById('login-pass-toggle');
     const loginPass = document.getElementById('password');
     if (loginToggle && loginPass) {
@@ -171,22 +322,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Toggle logic for Profile password
     const profileToggle = document.getElementById('profile-pass-toggle');
     const profilePass = document.getElementById('profile-password');
     if (profileToggle && profilePass) {
         profileToggle.addEventListener('click', () => {
-            if (profilePass.innerText.includes("•")) {
-                profilePass.innerText = currentProfilePassword;
-                profileToggle.innerText = '🙈';
-            } else {
-                profilePass.innerText = "•".repeat(currentProfilePassword.length);
-                profileToggle.innerText = '👁️';
-            }
+            // Password is securely hashed — cannot reveal
+            // Just show a tooltip/message
         });
     }
 
-    // Toggle logic for Profile Email
     const emailToggle = document.getElementById('profile-email-toggle');
     const profileEmailEl = document.getElementById('profile-email');
     if (emailToggle && profileEmailEl) {
@@ -206,22 +350,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Avatar logic
+    // ==========================================
+    // AVATAR SELECTION
+    // ==========================================
     const avaContainer = document.getElementById('profile-pic-btn');
     const avatarModal = document.getElementById('avatar-modal');
     const closeAvatarBtn = document.getElementById('close-avatar-btn');
     const avatarGrid = document.getElementById('avatar-grid');
 
     if (avaContainer) {
-        avaContainer.addEventListener('click', () => {
-            avatarModal.style.display = 'flex';
-        });
+        avaContainer.addEventListener('click', () => { avatarModal.style.display = 'flex'; });
     }
-
     if (closeAvatarBtn) {
-        closeAvatarBtn.addEventListener('click', () => {
-            avatarModal.style.display = 'none';
-        });
+        closeAvatarBtn.addEventListener('click', () => { avatarModal.style.display = 'none'; });
     }
 
     if (avatarGrid) {
@@ -229,83 +370,81 @@ document.addEventListener('DOMContentLoaded', () => {
             const img = document.createElement('img');
             img.src = `Avatars Imagex/${filename}`;
             img.className = 'avatar-option';
-            img.addEventListener('click', () => {
-                selectAvatar(filename);
-            });
+            img.addEventListener('click', () => selectAvatar(filename));
             avatarGrid.appendChild(img);
         });
     }
 
-    function selectAvatar(filename) {
-        if (!currentUserEmail) return;
-        const db = getUsersDB();
-        if (db[currentUserEmail]) {
-            db[currentUserEmail].avatar = filename;
-            saveUserDB(db);
-            populateUser(db[currentUserEmail]);
+    async function selectAvatar(filename) {
+        if (!currentUser) return;
+        try {
+            const data = await api('PUT', '/api/user', { avatar: filename });
+            currentUser = data.user;
+            populateUser();
             avatarModal.style.display = 'none';
+        } catch (e) {
+            console.error('Failed to update avatar:', e);
         }
     }
 
-    // --- Letter Thread Logic ---
+    // ==========================================
+    // LETTER THREAD
+    // ==========================================
     const letterModal = document.getElementById('letter-modal');
     const closeLetterBtn = document.getElementById('close-letter-btn');
     const letterGrid = document.getElementById('letter-grid');
     const threadContainer = document.getElementById('letters-thread-container');
 
     if (closeLetterBtn) {
-        closeLetterBtn.addEventListener('click', () => {
-            letterModal.style.display = 'none';
-        });
+        closeLetterBtn.addEventListener('click', () => { letterModal.style.display = 'none'; });
     }
 
     if (letterGrid) {
         LETTERS_OPT.forEach(filename => {
             const img = document.createElement('img');
             img.src = `Letters Options/${filename}`;
-            img.className = 'avatar-option'; 
-            img.style.aspectRatio = 'auto'; // Disable 1:1 circle rule for letter tiles
-            img.style.maxHeight = '140px'; 
+            img.className = 'avatar-option';
+            img.style.aspectRatio = 'auto';
+            img.style.maxHeight = '140px';
             img.style.borderRadius = '8px';
-            img.addEventListener('click', () => {
-                selectLetterBackground(filename);
-            });
+            img.addEventListener('click', () => selectLetterBackground(filename));
             letterGrid.appendChild(img);
         });
     }
 
-    function selectLetterBackground(filename) {
-        if (!currentUserEmail) return;
-        const db = getUsersDB();
-        if (db[currentUserEmail]) {
-            if(!db[currentUserEmail].letters) db[currentUserEmail].letters = [];
-            
-            const dateStr = new Date().toLocaleDateString([], {month: 'short', day: 'numeric', year: 'numeric'});
-            
-            db[currentUserEmail].letters.push({
+    async function selectLetterBackground(filename) {
+        if (!currentUser) return;
+        try {
+            const dateStr = new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+            const data = await api('POST', '/api/letters', {
                 file: filename,
                 date: dateStr,
-                id: Date.now()
+                content: "",
+                fontFamily: "'Caveat', cursive",
+                fontSize: "1.3rem"
             });
-            saveUserDB(db);
-            renderLettersThread(db[currentUserEmail].letters);
+            lettersCache.push(data.letter);
+            renderLettersThread(lettersCache);
             letterModal.style.display = 'none';
+        } catch (e) {
+            console.error('Failed to create letter:', e);
         }
     }
 
-    function deleteThreadLetter(id) {
-        if(!confirm("Are you sure you want to delete this specific letter?")) return;
-        if (!currentUserEmail) return;
-        const db = getUsersDB();
-        if (db[currentUserEmail] && db[currentUserEmail].letters) {
-            db[currentUserEmail].letters = db[currentUserEmail].letters.filter(l => l.id !== id);
-            saveUserDB(db);
-            renderLettersThread(db[currentUserEmail].letters);
+    async function deleteThreadLetter(id) {
+        if (!confirm("Are you sure you want to delete this specific letter?")) return;
+        if (!currentUser) return;
+        try {
+            await api('DELETE', `/api/letters/${id}`);
+            lettersCache = lettersCache.filter(l => l.id !== id);
+            renderLettersThread(lettersCache);
+        } catch (e) {
+            console.error('Failed to delete letter:', e);
         }
     }
 
     function renderLettersThread(lettersArray) {
-        if(!threadContainer) return;
+        if (!threadContainer) return;
         threadContainer.innerHTML = '';
 
         (lettersArray || []).forEach(letterObj => {
@@ -317,7 +456,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const dateDiv = document.createElement('div');
             dateDiv.className = 'letter-date';
-            // Ensure old entries strip explicit minutes/hours format, preserving clean logic
             dateDiv.innerText = letterObj.date.split(',').slice(0, 2).join(',').trim();
 
             const delBtn = document.createElement('button');
@@ -332,175 +470,386 @@ document.addEventListener('DOMContentLoaded', () => {
             img.src = `Letters Options/${letterObj.file}`;
             img.className = 'chosen-letter';
             img.style.cursor = 'pointer';
-            img.addEventListener('click', () => {
-                openLetterWriter(letterObj.id);
-            });
+            img.addEventListener('click', () => openLetterWriter(letterObj.id));
 
             topBar.appendChild(dateDiv);
             topBar.appendChild(delBtn);
             itemDiv.appendChild(topBar);
             itemDiv.appendChild(img);
-            
             threadContainer.appendChild(itemDiv);
         });
 
-        // Always append infinite chaining box
         const promptDiv = document.createElement('div');
         promptDiv.className = 'letter-prompt-box';
         promptDiv.innerText = "Pick your letter!";
-        promptDiv.addEventListener('click', () => {
-            letterModal.style.display = 'flex';
-        });
-        
+        promptDiv.addEventListener('click', () => { letterModal.style.display = 'flex'; });
         threadContainer.appendChild(promptDiv);
     }
 
-    // --- Letter Writer UI & Autosave Features ---
+    // ==========================================
+    // INFINITE PAPER WRITER
+    // ==========================================
     const paperAudio = document.getElementById('paper-sound');
-    if (paperAudio) {
-        paperAudio.volume = 0.6; // Scale down 60% as requested
-    }
+    if (paperAudio) paperAudio.volume = 0.6;
+
     const writerModal = document.getElementById('writer-modal');
-    const writerTextarea = document.getElementById('writer-textarea');
+    const writerContent = document.getElementById('writer-content');
     const writerFontOpt = document.getElementById('writer-font-opt');
     const writerSizeOpt = document.getElementById('writer-size-opt');
     const closeWriterBtn = document.getElementById('close-writer-btn');
+    const writerPaperMiddle = document.getElementById('writer-paper-middle');
+    const writerTopImg = document.getElementById('writer-top-img');
+    const writerBottomImg = document.getElementById('writer-bottom-img');
+    const writerScrollArea = document.getElementById('writer-scroll-area');
 
     let activeEditorId = null;
+    let activeLetterFile = null;
+    let saveTimeout = null;
 
     if (closeWriterBtn) {
         closeWriterBtn.addEventListener('click', () => {
-            // Play authentic paper sound exclusively on fold (close)
-            if(paperAudio) {
+            if (paperAudio) {
                 paperAudio.currentTime = 0;
-                paperAudio.play().catch(e=>console.log(e));
+                paperAudio.play().catch(() => {});
+            }
+            // Save any pending changes before closing
+            if (activeEditorId) {
+                flushSave();
             }
             writerModal.style.display = 'none';
             activeEditorId = null;
+            activeLetterFile = null;
         });
     }
 
-    window.openLetterWriter = function(id) {
-        if (!currentUserEmail) return;
-        const db = getUsersDB();
-        if (!db[currentUserEmail] || !db[currentUserEmail].letters) return;
-        
-        const letterData = db[currentUserEmail].letters.find(l => l.id === id);
-        if(!letterData) return;
+    function openLetterWriter(id) {
+        if (!currentUser) return;
+        const letterData = lettersCache.find(l => l.id === id);
+        if (!letterData) return;
 
-        // Apply a random immersive quote
+        // Random quote
         const randomQuote = LETTER_PROMPTS[Math.floor(Math.random() * LETTER_PROMPTS.length)];
-        writerTextarea.placeholder = randomQuote;
+        writerContent.setAttribute('data-placeholder', randomQuote);
 
-        // Play authentic paper sound
-        if(paperAudio) {
+        // Sound
+        if (paperAudio) {
             paperAudio.currentTime = 0;
-            paperAudio.play().catch(e=>console.log(e));
+            paperAudio.play().catch(() => {});
         }
 
         activeEditorId = id;
-        
-        // Load persistent data formatting or default setup
-        writerTextarea.value = letterData.content || "";
-        writerFontOpt.value = letterData.fontFamily || "'Inter', sans-serif";
+        activeLetterFile = letterData.file;
+
+        // Set letter covers
+        const letterImgPath = `Letters Options/${letterData.file}`;
+        writerTopImg.src = letterImgPath;
+        writerBottomImg.src = letterImgPath;
+
+        // Load content
+        writerContent.innerText = letterData.content || "";
+
+        // Load font/size with defaults
+        writerFontOpt.value = letterData.fontFamily || "'Caveat', cursive";
         writerSizeOpt.value = letterData.fontSize || "1.3rem";
 
-        // Apply physical visual attributes to canvas instantly
-        writerTextarea.style.fontFamily = writerFontOpt.value;
-        writerTextarea.style.fontSize = writerSizeOpt.value;
+        // Apply styles
+        writerContent.style.fontFamily = writerFontOpt.value;
+        writerContent.style.fontSize = writerSizeOpt.value;
 
         writerModal.style.display = 'flex';
-    };
 
-    // Passive Keylogging Autosave engine
-    if (writerTextarea) {
-        writerTextarea.addEventListener('input', () => {
-            saveActiveLetterProperty('content', writerTextarea.value);
+        // Auto-resize paper
+        requestAnimationFrame(autoResizePaper);
+    }
+
+    // Make available globally
+    window.openLetterWriter = openLetterWriter;
+
+    // Auto-resize paper middle to fit content
+    function autoResizePaper() {
+        if (!writerContent || !writerPaperMiddle) return;
+        const contentHeight = writerContent.scrollHeight;
+        const minHeight = 500;
+        writerPaperMiddle.style.minHeight = Math.max(minHeight, contentHeight + 80) + 'px';
+    }
+
+    // Debounced save to server
+    function saveActiveLetterProperty(key, value) {
+        if (!activeEditorId || !currentUser) return;
+        // Update local cache immediately
+        const letter = lettersCache.find(l => l.id === activeEditorId);
+        if (letter) {
+            letter[key] = value;
+        }
+        // Debounce API call
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(() => flushSave(), 800);
+    }
+
+    async function flushSave() {
+        if (!activeEditorId) return;
+        const letter = lettersCache.find(l => l.id === activeEditorId);
+        if (!letter) return;
+        try {
+            await api('PUT', `/api/letters/${activeEditorId}`, {
+                content: letter.content,
+                fontFamily: letter.fontFamily,
+                fontSize: letter.fontSize
+            });
+        } catch (e) {
+            console.error('Failed to save letter:', e);
+        }
+    }
+
+    // Contenteditable autosave + auto-resize
+    if (writerContent) {
+        writerContent.addEventListener('input', () => {
+            saveActiveLetterProperty('content', writerContent.innerText);
+            autoResizePaper();
         });
 
-        // Advanced internal keyboard functionality (Default Editor Systems)
-        writerTextarea.addEventListener('keydown', (e) => {
+        writerContent.addEventListener('keydown', (e) => {
             if (e.key === 'Tab') {
-                e.preventDefault(); // Stop cursor leaving box
-
-                const start = writerTextarea.selectionStart;
-                const end = writerTextarea.selectionEnd;
-
-                // Splice exactly 4 native spaces logically directly onto the string map dynamically 
-                writerTextarea.value = writerTextarea.value.substring(0, start) + "    " + writerTextarea.value.substring(end);
-
-                // Seamless cursor positioning correction
-                writerTextarea.selectionStart = writerTextarea.selectionEnd = start + 4;
-
-                // Sync internal backend sequence bypassing explicit keystroke logic
-                saveActiveLetterProperty('content', writerTextarea.value);
+                e.preventDefault();
+                document.execCommand('insertText', false, '    ');
+                saveActiveLetterProperty('content', writerContent.innerText);
             }
         });
     }
-    // Record Toolbar dropdown updates globally
+
     if (writerFontOpt) {
         writerFontOpt.addEventListener('change', () => {
-            writerTextarea.style.fontFamily = writerFontOpt.value;
+            writerContent.style.fontFamily = writerFontOpt.value;
             saveActiveLetterProperty('fontFamily', writerFontOpt.value);
         });
     }
+
     if (writerSizeOpt) {
         writerSizeOpt.addEventListener('change', () => {
-            writerTextarea.style.fontSize = writerSizeOpt.value;
+            writerContent.style.fontSize = writerSizeOpt.value;
             saveActiveLetterProperty('fontSize', writerSizeOpt.value);
+            requestAnimationFrame(autoResizePaper);
         });
     }
 
-    function saveActiveLetterProperty(key, value) {
-        if (!activeEditorId || !currentUserEmail) return;
-        const db = getUsersDB();
-        const letterIndex = db[currentUserEmail].letters.findIndex(l => l.id === activeEditorId);
-        if(letterIndex !== -1) {
-            db[currentUserEmail].letters[letterIndex][key] = value;
-            saveUserDB(db);
-        }
+    // ==========================================
+    // SHARE SYSTEM
+    // ==========================================
+    const shareModal = document.getElementById('share-modal');
+    const closeShareBtn = document.getElementById('close-share-btn');
+    const shareOpenBtn = document.getElementById('share-open-btn');
+    const shareScheduleToggle = document.getElementById('share-schedule-toggle');
+    const shareScheduleOptions = document.getElementById('share-schedule-options');
+    const shareCodeInput = document.getElementById('share-code-input');
+    const shareCodeGen = document.getElementById('share-code-gen');
+    const shareGenerateBtn = document.getElementById('share-generate-btn');
+    const shareLinkBox = document.getElementById('share-link-box');
+    const shareLinkText = document.getElementById('share-link-text');
+    const shareCopyBtn = document.getElementById('share-copy-btn');
+    const shareCopyFeedback = document.getElementById('share-copy-feedback');
+
+    if (shareOpenBtn) {
+        shareOpenBtn.addEventListener('click', () => {
+            if (!activeEditorId) return;
+            shareModal.style.display = 'flex';
+            shareLinkBox.style.display = 'none';
+            shareCopyFeedback.style.display = 'none';
+        });
     }
 
-    // Unified Nickname Controller Logic
+    if (closeShareBtn) {
+        closeShareBtn.addEventListener('click', () => { shareModal.style.display = 'none'; });
+    }
+
+    if (shareScheduleToggle) {
+        shareScheduleToggle.addEventListener('change', () => {
+            shareScheduleOptions.style.display = shareScheduleToggle.checked ? 'flex' : 'none';
+        });
+    }
+
+    // Auto-generate code
+    if (shareCodeGen) {
+        shareCodeGen.addEventListener('click', () => {
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            let code = '';
+            for (let i = 0; i < 6; i++) {
+                code += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            shareCodeInput.value = code;
+        });
+    }
+
+    // Generate share link
+    if (shareGenerateBtn) {
+        shareGenerateBtn.addEventListener('click', () => {
+            if (!activeEditorId || !currentUser) return;
+
+            const letterData = lettersCache.find(l => l.id === activeEditorId);
+            if (!letterData) return;
+
+            const secretCode = shareCodeInput.value.trim();
+            if (!secretCode) {
+                alert('Please enter a secret code or click Auto to generate one.');
+                return;
+            }
+
+            // Build share payload
+            const payload = {
+                content: letterData.content || '',
+                letterFile: letterData.file,
+                fontFamily: letterData.fontFamily || "'Caveat', cursive",
+                fontSize: letterData.fontSize || "1.3rem",
+                secretCode: secretCode
+            };
+
+            // Schedule
+            if (shareScheduleToggle.checked) {
+                const datetime = document.getElementById('share-datetime').value;
+                const timezone = document.getElementById('share-timezone').value;
+                if (datetime) {
+                    const localDate = new Date(datetime);
+                    payload.scheduledTime = localDate.toISOString();
+                    payload.scheduledTimezone = timezone;
+                }
+            }
+
+            // Unlock message
+            const unlockMsg = document.getElementById('share-unlock-msg').value.trim();
+            if (unlockMsg) {
+                payload.unlockMessage = unlockMsg;
+                payload.unlockStyle = {
+                    font: document.getElementById('share-msg-font').value,
+                    color: document.getElementById('share-msg-color').value,
+                    size: document.getElementById('share-msg-size').value
+                };
+            }
+
+            // Compress and encode
+            const jsonStr = JSON.stringify(payload);
+            const compressed = window.LZString.compressToEncodedURIComponent(jsonStr);
+
+            // Build URL
+            const baseUrl = window.location.href.replace(/\/[^\/]*$/, '/');
+            const shareUrl = baseUrl + 'share.html#data=' + compressed;
+
+            shareLinkText.value = shareUrl;
+            shareLinkBox.style.display = 'block';
+            shareCopyFeedback.style.display = 'none';
+        });
+    }
+
+    // Copy link
+    if (shareCopyBtn) {
+        shareCopyBtn.addEventListener('click', () => {
+            shareLinkText.select();
+            navigator.clipboard.writeText(shareLinkText.value).then(() => {
+                shareCopyFeedback.style.display = 'block';
+                setTimeout(() => { shareCopyFeedback.style.display = 'none'; }, 3000);
+            }).catch(() => {
+                document.execCommand('copy');
+                shareCopyFeedback.style.display = 'block';
+            });
+        });
+    }
+
+    // ==========================================
+    // INBOX / MAILBOX
+    // ==========================================
+    function renderInbox(inboxArray) {
+        const inboxList = document.getElementById('inbox-letters-list');
+        if (!inboxList) return;
+        inboxList.innerHTML = '';
+
+        if (!inboxArray || inboxArray.length === 0) {
+            inboxList.innerHTML = `
+                <div class="inbox-empty">
+                    <div class="inbox-empty-icon">📭</div>
+                    <p>No letters yet.<br>When someone shares a letter with you, it will appear here.</p>
+                </div>
+            `;
+            return;
+        }
+
+        inboxArray.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'inbox-item';
+            div.innerHTML = `
+                <div class="inbox-item-header">
+                    <span>💌 Letter</span>
+                    <span class="inbox-item-date">${item.receivedDate || ''}</span>
+                </div>
+                <p class="inbox-item-preview">${(item.content || '').substring(0, 100)}${(item.content || '').length > 100 ? '...' : ''}</p>
+            `;
+            div.addEventListener('click', () => {
+                openReadOnlyLetter(item);
+            });
+            inboxList.appendChild(div);
+        });
+    }
+
+    function openReadOnlyLetter(letterItem) {
+        // Reuse the writer modal in read-only mode
+        const letterImgPath = `Letters Options/${letterItem.letterFile || letterItem.file || ''}`;
+        writerTopImg.src = letterImgPath;
+        writerBottomImg.src = letterImgPath;
+        writerContent.innerText = letterItem.content || '';
+        writerContent.contentEditable = 'false';
+        writerContent.style.fontFamily = letterItem.fontFamily || "'Caveat', cursive";
+        writerContent.style.fontSize = letterItem.fontSize || "1.3rem";
+        writerModal.style.display = 'flex';
+        activeEditorId = null; // prevent saving
+
+        requestAnimationFrame(autoResizePaper);
+
+        // Restore editable on close
+        const restoreHandler = () => {
+            writerContent.contentEditable = 'true';
+            closeWriterBtn.removeEventListener('click', restoreHandler);
+        };
+        closeWriterBtn.addEventListener('click', restoreHandler);
+    }
+
+    // ==========================================
+    // NICKNAME SYSTEM
+    // ==========================================
     const nickInput = document.getElementById('nickname-input');
     const profileNickInput = document.getElementById('profile-nickname-input');
-    
+    let nickSaveTimeout = null;
+
     if (nickInput) {
-        nickInput.addEventListener('input', (e) => {
-            unifyNicknames(e.target.value);
-        });
+        nickInput.addEventListener('input', (e) => unifyNicknames(e.target.value));
     }
-
     if (profileNickInput) {
-        profileNickInput.addEventListener('input', (e) => {
-            unifyNicknames(e.target.value);
-        });
+        profileNickInput.addEventListener('input', (e) => unifyNicknames(e.target.value));
     }
 
-    // Centrally ties the entire ecosystem ensuring inputs dynamically mirror arrays cross-component
-    window.unifyNicknames = function(newVal) {
-        if (!currentUserEmail) return;
-        const db = getUsersDB();
-        if (db[currentUserEmail]) {
-            db[currentUserEmail].nickname = newVal;
-            saveUserDB(db);
-        }
+    window.unifyNicknames = function (newVal) {
+        if (!currentUser) return;
+        currentUser.nickname = newVal;
 
-        if(nickInput && nickInput.value !== newVal) nickInput.value = newVal;
-        if(profileNickInput && profileNickInput.value !== newVal) profileNickInput.value = newVal;
+        if (nickInput && nickInput.value !== newVal) nickInput.value = newVal;
+        if (profileNickInput && profileNickInput.value !== newVal) profileNickInput.value = newVal;
 
         renderPhantomNickname(nickInput, document.getElementById('phantom-wavy-display'), "Please create the most silliest nickname", true);
         renderPhantomNickname(profileNickInput, document.getElementById('profile-phantom-wavy'), "Please create the most silliest nickname", false);
+
+        // Debounce API save
+        clearTimeout(nickSaveTimeout);
+        nickSaveTimeout = setTimeout(async () => {
+            try {
+                await api('PUT', '/api/user', { nickname: newVal });
+            } catch (e) {
+                console.error('Failed to save nickname:', e);
+            }
+        }, 500);
     };
 
-    // Shared Phantom Generator API rendering sequential CSS animations overlaying inputs completely!
-    window.renderPhantomNickname = function(inputEl, phantomEl, placeholderText, scaleWidth) {
-        if(!inputEl || !phantomEl) return;
-        
+    window.renderPhantomNickname = function (inputEl, phantomEl, placeholderText, scaleWidth) {
+        if (!inputEl || !phantomEl) return;
         const isPlaceholder = !inputEl.value;
         const textToMeasure = inputEl.value || placeholderText;
-        
-        if(scaleWidth) {
+
+        if (scaleWidth) {
             inputEl.style.width = (textToMeasure.length + 1) + "ch";
         }
 
@@ -513,34 +862,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 sp.style.opacity = '0.5';
                 sp.style.fontStyle = 'italic';
             }
-            // Generate sequence sequentially natively!
             sp.style.animationDelay = `${idx * 0.05}s`;
             phantomEl.appendChild(sp);
         });
     };
 
     const blurHandler = () => {
-        if(!currentUserEmail) return;
-        const db = getUsersDB();
-        if(db[currentUserEmail]) saveUserDB(db);
+        // Save handled by debounce already
     };
 
-    if(nickInput) {
+    if (nickInput) {
         nickInput.addEventListener('blur', blurHandler);
-        nickInput.addEventListener('keypress', (e) => {
-            if(e.key === 'Enter') nickInput.blur();
-        });
+        nickInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') nickInput.blur(); });
     }
-    if(profileNickInput) {
+    if (profileNickInput) {
         profileNickInput.addEventListener('blur', blurHandler);
-        profileNickInput.addEventListener('keypress', (e) => {
-            if(e.key === 'Enter') profileNickInput.blur();
-        });
+        profileNickInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') profileNickInput.blur(); });
     }
 
-    // 3. Navigation interaction (Swapping Views)
+    // ==========================================
+    // NAVIGATION
+    // ==========================================
     let lastActiveView = 'view-home';
-    
+
     navBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             navBtns.forEach(b => b.classList.remove('active'));
@@ -548,63 +892,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const viewId = 'view-' + btn.innerText.trim().toLowerCase();
             lastActiveView = viewId;
-            
-            document.querySelectorAll('.view-section').forEach(v => {
-                v.style.display = 'none';
-            });
+
+            document.querySelectorAll('.view-section').forEach(v => { v.style.display = 'none'; });
             const targetView = document.getElementById(viewId);
-            if(targetView) targetView.style.display = 'block';
+            if (targetView) targetView.style.display = 'block';
         });
     });
 
-    // Navigate to Profile via Header Avatar (Toggle)
+    // Header avatar → profile toggle
     const headerAvatarBtn = document.getElementById('header-avatar');
     if (headerAvatarBtn) {
         headerAvatarBtn.addEventListener('click', () => {
             const profileView = document.getElementById('view-profile');
-            
-            // If already open, close it and return to previous view
             if (profileView && profileView.style.display === 'block') {
                 document.querySelectorAll('.view-section').forEach(v => v.style.display = 'none');
-                
                 const targetView = document.getElementById(lastActiveView);
-                if(targetView) targetView.style.display = 'block';
-                
-                // Re-enable correct lower nav glow
+                if (targetView) targetView.style.display = 'block';
                 navBtns.forEach(b => {
                     if ('view-' + b.innerText.trim().toLowerCase() === lastActiveView) {
                         b.classList.add('active');
                     }
                 });
             } else {
-                // Open Profile normally
                 document.querySelectorAll('.view-section').forEach(v => v.style.display = 'none');
-                if(profileView) profileView.style.display = 'block';
-                
-                // Turn off lower nav glow
+                if (profileView) profileView.style.display = 'block';
                 navBtns.forEach(b => b.classList.remove('active'));
             }
         });
     }
 
-    // 4. Logout handling
+    // ==========================================
+    // LOGOUT
+    // ==========================================
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', () => {
-            const logout = confirm(`Are you sure you want to log out?`);
+        logoutBtn.addEventListener('click', async () => {
+            const logout = confirm('Are you sure you want to log out?');
             if (logout) {
-                // Wipe active session but keep the user database
-                localStorage.removeItem('iLetterU_session');
-                currentUserEmail = null;
-                
+                try {
+                    await api('POST', '/api/logout');
+                } catch (e) {
+                    // Even if API fails, clear locally
+                }
+                localStorage.removeItem('iLetterU_token');
+                sessionToken = null;
+                currentUser = null;
+                lettersCache = [];
+                inboxCache = [];
+
                 appContainer.style.display = 'none';
                 loginScreen.style.display = 'flex';
                 loginScreen.style.animation = 'fadeIn 0.6s ease';
                 loginForm.reset();
+                setAuthMode(false);
                 document.getElementById('user-badge').style.display = 'none';
-                if(document.getElementById('header-avatar')) document.getElementById('header-avatar').style.display = 'none';
-                
-                // Reset views for next login
+                if (document.getElementById('header-avatar')) document.getElementById('header-avatar').style.display = 'none';
+
                 lastActiveView = 'view-home';
                 document.querySelectorAll('.view-section').forEach(v => v.style.display = 'none');
                 document.getElementById('view-home').style.display = 'block';
@@ -614,5 +957,5 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    console.log('Postal App initialized!');
+    console.log('iLetterU Postal App initialized!');
 });

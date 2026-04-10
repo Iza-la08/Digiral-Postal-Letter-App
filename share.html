@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>iLetterU — You Have a Letter!</title>
+    <link rel="stylesheet" href="share.css">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Caveat:wght@400;600&family=Dancing+Script:wght@400;600&family=Indie+Flower&family=Outfit:wght@300;400;600;700&display=swap"
+        rel="stylesheet">
+    <meta name="theme-color" content="#0f172a">
+</head>
+
+<body>
+    <!-- Background Canvas for Confetti -->
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- Phase 1: Countdown Screen -->
+    <div id="countdown-screen" class="screen" style="display: none;">
+        <div class="countdown-wrapper">
+            <div class="countdown-envelope">💌</div>
+            <h2 class="countdown-title">A letter is waiting for you...</h2>
+            <p class="countdown-subtitle">This letter was meant for this moment</p>
+            <div id="countdown-display" class="countdown-display"></div>
+            <p class="countdown-hint">Come back when it's time ✨</p>
+        </div>
+    </div>
+
+    <!-- Phase 2: Unlock / Celebration Screen -->
+    <div id="unlock-screen" class="screen" style="display: none;">
+        <div class="unlock-wrapper">
+            <div id="unlock-message-display" class="unlock-message">Open Now!</div>
+            <button id="open-letter-btn" class="open-letter-btn">
+                <span class="btn-glow"></span>
+                💌 Tap to Open
+            </button>
+        </div>
+    </div>
+
+    <!-- Phase 3: Code Entry Screen -->
+    <div id="code-screen" class="screen" style="display: none;">
+        <div class="code-wrapper">
+            <div class="code-lock-icon">🔐</div>
+            <h2>Enter Secret Code</h2>
+            <p class="code-hint">The sender protected this letter with a secret code</p>
+            <input type="text" id="code-input" class="code-input" placeholder="Enter code..." autocomplete="off"
+                maxlength="30">
+            <button id="code-submit-btn" class="code-submit-btn">Unlock Letter</button>
+            <p id="code-error" class="code-error" style="display: none;">Incorrect code. Try again.</p>
+        </div>
+    </div>
+
+    <!-- Phase 4: Letter View (Read-Only) -->
+    <div id="letter-screen" class="screen" style="display: none;">
+        <div class="letter-view-container">
+            <div class="letter-view-header">
+                <img src="iLetterU.PNG" alt="iLetterU" class="letter-view-logo">
+                <button id="save-letter-btn" class="save-letter-btn" style="display:none;">💾 Save to Mailbox</button>
+            </div>
+            <div class="letter-scroll-area">
+                <div class="paper-top-cover" id="view-top-cover">
+                    <img src="" id="view-top-img" alt="">
+                </div>
+                <div class="paper-middle" id="view-paper-middle">
+                    <div id="view-letter-content" class="letter-content-readonly"></div>
+                </div>
+                <div class="paper-bottom-cover" id="view-bottom-cover">
+                    <img src="" id="view-bottom-img" alt="">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Screen -->
+    <div id="error-screen" class="screen" style="display: none;">
+        <div class="error-wrapper">
+            <div class="error-icon">📭</div>
+            <h2>Letter Not Found</h2>
+            <p>This link doesn't contain a valid letter. Please check the URL and try again.</p>
+        </div>
+    </div>
+
+    <audio id="pop-sound" src="Sounds effect/paper_sound.mp3"></audio>
+
+    <script src="share.js"></script>
+</body>
+
+</html>
