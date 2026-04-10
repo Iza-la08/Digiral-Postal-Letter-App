@@ -617,6 +617,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Click anywhere on the paper to focus the editor
+    if (writerPaperMiddle && writerContent) {
+        writerPaperMiddle.addEventListener('click', (e) => {
+            if (e.target === writerPaperMiddle) {
+                writerContent.focus();
+                // Place cursor at end
+                const sel = window.getSelection();
+                sel.selectAllChildren(writerContent);
+                sel.collapseToEnd();
+            }
+        });
+    }
+
     if (writerFontOpt) {
         writerFontOpt.addEventListener('change', () => {
             writerContent.style.fontFamily = writerFontOpt.value;
@@ -898,6 +911,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if (targetView) targetView.style.display = 'block';
         });
     });
+
+    // Logo click → go to Home
+    const logoHomeBtn = document.getElementById('logo-home-btn');
+    if (logoHomeBtn) {
+        logoHomeBtn.addEventListener('click', () => {
+            document.querySelectorAll('.view-section').forEach(v => v.style.display = 'none');
+            const homeView = document.getElementById('view-home');
+            if (homeView) homeView.style.display = 'block';
+            lastActiveView = 'view-home';
+            navBtns.forEach(b => b.classList.remove('active'));
+            if (navBtns[0]) navBtns[0].classList.add('active');
+        });
+    }
 
     // Header avatar → profile toggle
     const headerAvatarBtn = document.getElementById('header-avatar');
