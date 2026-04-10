@@ -454,6 +454,75 @@ body {
 }
 
 /* ==========================================
+   ENVELOPE PREVIEW SCREEN
+   ========================================== */
+.envelope-wrapper {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 40px 24px;
+}
+
+.envelope-logo {
+    width: 200px;
+    height: auto;
+    margin-bottom: 8px;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+}
+
+.envelope-hint {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #e2e8f0;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.envelope-letter-preview {
+    cursor: pointer;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    animation: envelopeFloat 3s ease-in-out infinite;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 30px rgba(192, 132, 252, 0.15);
+    max-width: 320px;
+}
+
+.envelope-letter-preview:hover {
+    transform: scale(1.05) translateY(-4px);
+    box-shadow: 0 16px 50px rgba(0, 0, 0, 0.6), 0 0 40px rgba(192, 132, 252, 0.3);
+}
+
+.envelope-letter-preview:active {
+    transform: scale(0.97);
+}
+
+.envelope-preview-img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 12px;
+}
+
+.envelope-tap-hint {
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.4);
+    font-style: italic;
+    animation: pulseFade 2s ease-in-out infinite;
+}
+
+@keyframes envelopeFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-12px); }
+}
+
+@keyframes pulseFade {
+    0%, 100% { opacity: 0.4; }
+    50% { opacity: 0.8; }
+}
+
+/* ==========================================
    UTILITY ANIMATIONS
    ========================================== */
 @keyframes fadeIn {

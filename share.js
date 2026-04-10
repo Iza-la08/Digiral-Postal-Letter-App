@@ -451,7 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showScreen('code-screen');
                 document.getElementById('code-input').focus();
             } else {
-                renderLetter();
+                showEnvelopePreview();
             }
         });
     }
@@ -474,12 +474,43 @@ document.addEventListener('DOMContentLoaded', () => {
         const entered = codeInput.value.trim();
         if (entered === letterData.secretCode) {
             codeError.style.display = 'none';
-            renderLetter();
+            showEnvelopePreview();
         } else {
             codeError.style.display = 'block';
             codeInput.style.animation = 'shake 0.4s ease';
             setTimeout(() => { codeInput.style.animation = ''; }, 400);
         }
+    }
+
+    // --- Envelope Preview (tap to open) ---
+    function showEnvelopePreview() {
+        showScreen('envelope-screen');
+
+        // Show the letter image as the envelope
+        const envelopeImg = document.getElementById('envelope-preview-img');
+        const letterImgPath = 'Letters Options/' + (letterData.letterFile || '');
+        envelopeImg.src = letterImgPath;
+
+        // Click envelope to open letter
+        const envelopePreview = document.getElementById('envelope-preview');
+        envelopePreview.addEventListener('click', () => {
+            // Play paper sound
+            const popSound = document.getElementById('pop-sound');
+            if (popSound) {
+                popSound.currentTime = 0;
+                popSound.volume = 0.6;
+                popSound.play().catch(() => {});
+            }
+
+            // Animate envelope out then render letter
+            envelopePreview.style.transition = 'transform 0.5s ease, opacity 0.5s ease';
+            envelopePreview.style.transform = 'scale(1.1) translateY(-30px)';
+            envelopePreview.style.opacity = '0';
+
+            setTimeout(() => {
+                renderLetter();
+            }, 500);
+        }, { once: true });
     }
 
     // --- Render Letter (Read-Only) ---

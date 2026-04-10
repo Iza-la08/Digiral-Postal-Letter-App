@@ -707,25 +707,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Build friendly message with nickname
             const nickname = db[currentUserEmail].nickname || 'Someone';
-            const friendlyMsg = `✉️ ${nickname} sent you an iLetter!\n\n${shareUrl}`;
+            const friendlyMsg = `✉️ ${nickname} sent you an iLetter!`;
 
+            // Store the URL + message for copy
             shareLinkText.value = friendlyMsg;
+            shareLinkText.dataset.url = shareUrl;
+            shareLinkText.dataset.nickname = nickname;
             shareLinkBox.style.display = 'block';
             shareCopyFeedback.style.display = 'none';
         });
     }
 
-    // Copy link
+    // Copy link as rich text with embedded hyperlink
     if (shareCopyBtn) {
-        shareCopyBtn.addEventListener('click', () => {
-            shareLinkText.select();
-            navigator.clipboard.writeText(shareLinkText.value).then(() => {
-                shareCopyFeedback.style.display = 'block';
-                setTimeout(() => { shareCopyFeedback.style.display = 'none'; }, 3000);
-            }).catch(() => {
-                document.execCommand('copy');
-                shareCopyFeedback.style.display = 'block';
-            });
+        shareCopyBtn.addEventListener('click', async () => {
+            const url = shareLinkText.dataset.url;
+            const nickname = shareLinkText.dataset.nickname || 'Someone';
+
+            // Rich HTML version: "Nickname sent you an iLetter!" with iLetter as link
+            const htmlContent = `✉️ ${nickname} sent you an <a href="${url}">iLetter</a>!`;
+            // Plain text fallback
+            const plainContent = `✉️ ${nickname} sent you an iLetter!\n${url}`;
+
+            try {
+                const htmlBlob = new Blob([htmlContent], { type: 'text/html' });
+                const textBlob = new Blob([plainContent], { type: 'text/plain' });
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/html': htmlBlob,
+                        'text/plain': textBlob
+                    })
+                ]);
+            } catch (e) {
+                // Fallback: copy plain text
+                try {
+                    await navigator.clipboard.writeText(plainContent);
+                } catch (e2) {
+                    shareLinkText.value = plainContent;
+                    shareLinkText.select();
+                    document.execCommand('copy');
+                    shareLinkText.value = `✉️ ${nickname} sent you an iLetter!`;
+                }
+            }
+            shareCopyFeedback.style.display = 'block';
+            setTimeout(() => { shareCopyFeedback.style.display = 'none'; }, 3000);
         });
     }
 

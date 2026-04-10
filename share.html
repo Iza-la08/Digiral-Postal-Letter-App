@@ -52,7 +52,19 @@
         </div>
     </div>
 
-    <!-- Phase 4: Letter View (Read-Only) -->
+    <!-- Phase 4: Envelope Preview (click to open) -->
+    <div id="envelope-screen" class="screen" style="display: none;">
+        <div class="envelope-wrapper">
+            <img src="iLetterU.PNG" alt="iLetterU" class="envelope-logo">
+            <p class="envelope-hint">You have a letter! Tap to open it ✉️</p>
+            <div class="envelope-letter-preview" id="envelope-preview">
+                <img src="" id="envelope-preview-img" alt="Your Letter" class="envelope-preview-img">
+            </div>
+            <p class="envelope-tap-hint">tap the letter</p>
+        </div>
+    </div>
+
+    <!-- Phase 5: Letter View (Read-Only) -->
     <div id="letter-screen" class="screen" style="display: none;">
         <div class="letter-view-container">
             <div class="letter-view-header">
