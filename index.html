@@ -115,10 +115,21 @@
 
                 <!-- Generated Link Display -->
                 <div id="share-link-box" class="share-link-box" style="display: none;">
-                    <p class="share-link-label">Your shareable link:</p>
-                    <textarea id="share-link-text" class="share-link-text" readonly rows="1"></textarea>
-                    <button type="button" id="share-copy-btn" class="share-copy-btn">📋 Copy Link</button>
-                    <p id="share-copy-feedback" class="share-copy-feedback" style="display: none;">✅ Copied!</p>
+                    <!-- Option 1: Copy Link -->
+                    <div class="share-option">
+                        <p class="share-option-label">Option 1 — Copy Link</p>
+                        <textarea id="share-link-text" class="share-link-text" readonly rows="3"></textarea>
+                        <button type="button" id="share-copy-btn" class="share-copy-btn">📋 Copy Link</button>
+                        <p id="share-copy-feedback" class="share-copy-feedback" style="display: none;">✅ Copied!</p>
+                    </div>
+                    <!-- Option 2: QR Code -->
+                    <div class="share-option">
+                        <p class="share-option-label">Option 2 — Scan QR Code</p>
+                        <div id="share-qr-container" class="share-qr-container">
+                            <img id="share-qr-img" class="share-qr-img" alt="QR Code" />
+                        </div>
+                        <button type="button" id="share-save-qr-btn" class="share-copy-btn">💾 Save QR Code</button>
+                    </div>
                 </div>
             </div>
         </div>

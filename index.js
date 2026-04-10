@@ -653,7 +653,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Generate share link
     if (shareGenerateBtn) {
-        shareGenerateBtn.addEventListener('click', () => {
+        shareGenerateBtn.addEventListener('click', async () => {
             if (!activeEditorId || !currentUserEmail) return;
 
             const db = getUsersDB();
@@ -701,47 +701,52 @@ document.addEventListener('DOMContentLoaded', () => {
             const jsonStr = JSON.stringify(payload);
             const compressed = window.LZString.compressToEncodedURIComponent(jsonStr);
 
-            // Build URL — handle GitHub Pages and local paths correctly
-            let baseUrl = window.location.origin + window.location.pathname;
-            // Remove trailing filename (index.html, etc.) to get directory
-            if (baseUrl.match(/\/[^\/]*\.[^\/]*$/)) {
-                baseUrl = baseUrl.replace(/\/[^\/]*$/, '/');
-            } else if (!baseUrl.endsWith('/')) {
-                baseUrl += '/';
-            }
-            const shareUrl = baseUrl + 'share.html#data=' + compressed;
+            // Build share URL
+            const origin = window.location.origin;
+            const path = window.location.pathname.replace(/\/[^\/]*$/, '/');
+            const shareUrl = origin + path + 'share.html#data=' + compressed;
 
-            // Build friendly message with nickname
-            const nickname = db[currentUserEmail].nickname || 'Someone';
-            const friendlyMsg = `✉️ ${nickname} sent you an iLetter!`;
+            // Option 1: Show plain URL
+            shareLinkText.value = shareUrl;
 
-            // Store the URL + message for copy
-            shareLinkText.value = friendlyMsg;
-            shareLinkText.dataset.url = shareUrl;
-            shareLinkText.dataset.nickname = nickname;
-            shareLinkBox.style.display = 'block';
+            // Option 2: Generate QR code
+            const qrImg = document.getElementById('share-qr-img');
+            qrImg.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(shareUrl);
+
+            shareLinkBox.style.display = 'flex';
             shareCopyFeedback.style.display = 'none';
         });
     }
 
-    // Copy link
+    // Copy link — simple plain text copy
     if (shareCopyBtn) {
-        shareCopyBtn.addEventListener('click', async () => {
-            const url = shareLinkText.dataset.url;
-            const nickname = shareLinkText.dataset.nickname || 'Someone';
-            const copyText = `✉️ ${nickname} sent you an iLetter!\n${url}`;
-
-            try {
-                await navigator.clipboard.writeText(copyText);
-            } catch (e) {
-                // Fallback
-                shareLinkText.value = copyText;
-                shareLinkText.select();
+        shareCopyBtn.addEventListener('click', () => {
+            shareLinkText.select();
+            shareLinkText.setSelectionRange(0, 99999);
+            navigator.clipboard.writeText(shareLinkText.value).then(() => {
+                shareCopyFeedback.style.display = 'block';
+                setTimeout(() => { shareCopyFeedback.style.display = 'none'; }, 3000);
+            }).catch(() => {
                 document.execCommand('copy');
-                shareLinkText.value = `✉️ ${nickname} sent you an iLetter!`;
-            }
-            shareCopyFeedback.style.display = 'block';
-            setTimeout(() => { shareCopyFeedback.style.display = 'none'; }, 3000);
+                shareCopyFeedback.style.display = 'block';
+                setTimeout(() => { shareCopyFeedback.style.display = 'none'; }, 3000);
+            });
+        });
+    }
+
+    // Save QR code
+    const saveQrBtn = document.getElementById('share-save-qr-btn');
+    if (saveQrBtn) {
+        saveQrBtn.addEventListener('click', () => {
+            const qrImg = document.getElementById('share-qr-img');
+            if (!qrImg.src) return;
+            const link = document.createElement('a');
+            link.href = qrImg.src;
+            link.download = 'iLetterU-QR.png';
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         });
     }
 
