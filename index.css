@@ -494,7 +494,7 @@ body {
 /* Contenteditable Styling */
 .writer-content-editable {
     padding: 40px 48px;
-    color: #1a1a1a;
+    color: #000000;
     font-size: 1.3rem;
     font-family: 'Caveat', cursive;
     font-weight: 600;
