@@ -7,31 +7,27 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginScreen = document.getElementById('login-screen');
     const loginForm = document.getElementById('login-form');
 
-    let sessionToken = localStorage.getItem('iLetterU_token') || null;
-    let currentUser = null; // { id, email, nickname, avatar }
-    let lettersCache = []; // local copy of letters
-    let inboxCache = []; // local copy of inbox
+    let currentUserEmail = null;
 
     // ==========================================
-    // API HELPERS
+    // CLIENT-SIDE DB HELPERS
     // ==========================================
-    async function api(method, url, body = null) {
-        const opts = {
-            method,
-            headers: { 'Content-Type': 'application/json' }
-        };
-        if (sessionToken) {
-            opts.headers['X-Session-Token'] = sessionToken;
-        }
-        if (body) {
-            opts.body = JSON.stringify(body);
-        }
-        const res = await fetch(url, opts);
-        const data = await res.json();
-        if (!res.ok) {
-            throw { status: res.status, message: data.error || 'Unknown error' };
-        }
-        return data;
+    function getUsersDB() {
+        const dbStr = localStorage.getItem('iLetterU_usersDB');
+        return dbStr ? JSON.parse(dbStr) : {};
+    }
+
+    function saveUserDB(db) {
+        localStorage.setItem('iLetterU_usersDB', JSON.stringify(db));
+    }
+
+    // SHA-256 hash via Web Crypto API
+    async function hashPassword(password) {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
     // ==========================================
@@ -86,46 +82,29 @@ document.addEventListener('DOMContentLoaded', () => {
         authError.style.display = 'block';
     }
 
-    function showAuthSuccess(msg) {
-        authError.textContent = msg;
-        authError.className = 'auth-success';
-        authError.style.display = 'block';
-    }
-
     // ==========================================
     // SESSION CHECK (on page load)
     // ==========================================
-    async function checkSession() {
-        if (!sessionToken) return false;
+    const savedSession = localStorage.getItem('iLetterU_session');
+    if (savedSession) {
         try {
-            const data = await api('GET', '/api/me');
-            currentUser = data.user;
-            return true;
-        } catch (e) {
-            // Invalid session
-            localStorage.removeItem('iLetterU_token');
-            sessionToken = null;
-            return false;
-        }
+            const sessionEmail = JSON.parse(savedSession);
+            const db = getUsersDB();
+            if (db[sessionEmail]) {
+                currentUserEmail = sessionEmail;
+                populateUser(db[currentUserEmail]);
+                loginScreen.style.display = 'none';
+                appContainer.style.display = 'flex';
+            }
+        } catch (e) {}
     }
-
-    // Initialize
-    (async () => {
-        const loggedIn = await checkSession();
-        if (loggedIn) {
-            await loadUserData();
-            populateUser();
-            loginScreen.style.display = 'none';
-            appContainer.style.display = 'flex';
-        }
-    })();
 
     // ==========================================
     // AUTH FORM HANDLER
     // ==========================================
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const email = document.getElementById('email').value.trim();
+        const email = document.getElementById('email').value.trim().toLowerCase();
         const password = document.getElementById('password').value;
 
         if (!email || !password) {
@@ -138,39 +117,60 @@ document.addEventListener('DOMContentLoaded', () => {
         authError.style.display = 'none';
 
         try {
+            const hashedPass = await hashPassword(password);
+            const db = getUsersDB();
+
             if (isSignUpMode) {
                 // --- SIGN UP ---
                 const confirmPass = confirmPassInput ? confirmPassInput.value : '';
                 if (password !== confirmPass) {
                     showAuthError('Passwords do not match.');
-                    authSubmitBtn.disabled = false;
-                    authSubmitBtn.textContent = 'Sign Up';
                     return;
                 }
                 if (password.length < 6) {
                     showAuthError('Password must be at least 6 characters.');
-                    authSubmitBtn.disabled = false;
-                    authSubmitBtn.textContent = 'Sign Up';
+                    return;
+                }
+                if (db[email]) {
+                    showAuthError('An account with this email already exists. Please log in instead.');
                     return;
                 }
 
-                const data = await api('POST', '/api/signup', { email, password });
-                sessionToken = data.token;
-                localStorage.setItem('iLetterU_token', sessionToken);
-                currentUser = data.user;
-                lettersCache = [];
-                inboxCache = [];
+                // Create new account
+                db[email] = {
+                    email,
+                    passwordHash: hashedPass,
+                    nickname: "",
+                    avatar: "",
+                    letters: [],
+                    inbox: []
+                };
+                saveUserDB(db);
 
             } else {
                 // --- LOGIN ---
-                const data = await api('POST', '/api/login', { email, password });
-                sessionToken = data.token;
-                localStorage.setItem('iLetterU_token', sessionToken);
-                currentUser = data.user;
-                await loadUserData();
+                if (!db[email]) {
+                    showAuthError('Account does not exist. Please create an account first.');
+                    return;
+                }
+
+                // Verify password
+                if (db[email].passwordHash !== hashedPass) {
+                    showAuthError('Incorrect password. Please try again.');
+                    return;
+                }
             }
 
-            populateUser();
+            // Success — save session and enter app
+            localStorage.setItem('iLetterU_session', JSON.stringify(email));
+            currentUserEmail = email;
+
+            // Ensure data arrays exist
+            if (!db[email].letters) db[email].letters = [];
+            if (!db[email].inbox) db[email].inbox = [];
+            saveUserDB(db);
+
+            populateUser(db[email]);
 
             loginScreen.style.animation = 'fadeOut 0.4s ease forwards';
             setTimeout(() => {
@@ -180,30 +180,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 400);
 
         } catch (err) {
-            showAuthError(err.message || 'Something went wrong. Please try again.');
+            showAuthError('Something went wrong. Please try again.');
         } finally {
             authSubmitBtn.disabled = false;
             authSubmitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Log In';
         }
     });
 
-    // ==========================================
-    // LOAD USER DATA FROM API
-    // ==========================================
-    async function loadUserData() {
-        try {
-            const [lettersRes, inboxRes] = await Promise.all([
-                api('GET', '/api/letters'),
-                api('GET', '/api/inbox')
-            ]);
-            lettersCache = lettersRes.letters || [];
-            inboxCache = inboxRes.inbox || [];
-        } catch (e) {
-            console.error('Failed to load user data:', e);
-        }
-    }
-
-    let currentProfilePassword = "••••••••";
+    let currentProfilePassword = "";
     let currentProfileEmail = "";
 
     // ==========================================
@@ -248,9 +232,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     // POPULATE USER
     // ==========================================
-    function populateUser() {
-        if (!currentUser) return;
-
+    function populateUser(data) {
         const badge = document.getElementById('user-badge');
         badge.style.display = 'flex';
 
@@ -262,12 +244,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const hActivePic = document.getElementById('header-active-pic');
         const hDefaultPic = document.getElementById('header-default-pic');
 
-        if (currentUser.avatar) {
-            activePic.src = "Avatars Imagex/" + currentUser.avatar;
+        if (data.avatar) {
+            activePic.src = "Avatars Imagex/" + data.avatar;
             activePic.style.display = 'block';
             defaultPic.style.display = 'none';
             if (hActivePic && hDefaultPic) {
-                hActivePic.src = "Avatars Imagex/" + currentUser.avatar;
+                hActivePic.src = "Avatars Imagex/" + data.avatar;
                 hActivePic.style.display = 'block';
                 hDefaultPic.style.display = 'none';
             }
@@ -280,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        const nickname = currentUser.nickname || "";
+        const nickname = data.nickname || "";
         const nickInput = document.getElementById('nickname-input');
         const profileNickInput = document.getElementById('profile-nickname-input');
         if (nickInput) nickInput.value = nickname;
@@ -289,7 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderPhantomNickname(nickInput, document.getElementById('phantom-wavy-display'), "Please create the most silliest nickname", true);
         renderPhantomNickname(profileNickInput, document.getElementById('profile-phantom-wavy'), "Please create the most silliest nickname", false);
 
-        currentProfileEmail = currentUser.email;
+        currentProfileEmail = data.email;
         const emailParts = currentProfileEmail.split('@');
         let maskedEmail = currentProfileEmail;
         if (emailParts.length === 2 && emailParts[0].length > 2) {
@@ -299,14 +281,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const eToggle = document.getElementById('profile-email-toggle');
         if (eToggle) eToggle.innerText = '👁️';
 
-        // Password is hashed on server — show masked dots
+        // Password is hashed — show locked dots
         currentProfilePassword = "••••••••";
         document.getElementById('profile-password').innerText = "••••••••";
         const pToggle = document.getElementById('profile-pass-toggle');
         if (pToggle) pToggle.innerText = '🔒';
 
-        renderLettersThread(lettersCache);
-        renderInbox(inboxCache);
+        renderLettersThread(data.letters || []);
+        renderInbox(data.inbox || []);
     }
 
     // ==========================================
@@ -327,7 +309,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (profileToggle && profilePass) {
         profileToggle.addEventListener('click', () => {
             // Password is securely hashed — cannot reveal
-            // Just show a tooltip/message
         });
     }
 
@@ -375,15 +356,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function selectAvatar(filename) {
-        if (!currentUser) return;
-        try {
-            const data = await api('PUT', '/api/user', { avatar: filename });
-            currentUser = data.user;
-            populateUser();
+    function selectAvatar(filename) {
+        if (!currentUserEmail) return;
+        const db = getUsersDB();
+        if (db[currentUserEmail]) {
+            db[currentUserEmail].avatar = filename;
+            saveUserDB(db);
+            populateUser(db[currentUserEmail]);
             avatarModal.style.display = 'none';
-        } catch (e) {
-            console.error('Failed to update avatar:', e);
         }
     }
 
@@ -412,34 +392,34 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function selectLetterBackground(filename) {
-        if (!currentUser) return;
-        try {
+    function selectLetterBackground(filename) {
+        if (!currentUserEmail) return;
+        const db = getUsersDB();
+        if (db[currentUserEmail]) {
+            if (!db[currentUserEmail].letters) db[currentUserEmail].letters = [];
             const dateStr = new Date().toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-            const data = await api('POST', '/api/letters', {
+            db[currentUserEmail].letters.push({
                 file: filename,
                 date: dateStr,
+                id: Date.now(),
                 content: "",
                 fontFamily: "'Caveat', cursive",
                 fontSize: "1.3rem"
             });
-            lettersCache.push(data.letter);
-            renderLettersThread(lettersCache);
+            saveUserDB(db);
+            renderLettersThread(db[currentUserEmail].letters);
             letterModal.style.display = 'none';
-        } catch (e) {
-            console.error('Failed to create letter:', e);
         }
     }
 
-    async function deleteThreadLetter(id) {
+    function deleteThreadLetter(id) {
         if (!confirm("Are you sure you want to delete this specific letter?")) return;
-        if (!currentUser) return;
-        try {
-            await api('DELETE', `/api/letters/${id}`);
-            lettersCache = lettersCache.filter(l => l.id !== id);
-            renderLettersThread(lettersCache);
-        } catch (e) {
-            console.error('Failed to delete letter:', e);
+        if (!currentUserEmail) return;
+        const db = getUsersDB();
+        if (db[currentUserEmail] && db[currentUserEmail].letters) {
+            db[currentUserEmail].letters = db[currentUserEmail].letters.filter(l => l.id !== id);
+            saveUserDB(db);
+            renderLettersThread(db[currentUserEmail].letters);
         }
     }
 
@@ -504,17 +484,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let activeEditorId = null;
     let activeLetterFile = null;
-    let saveTimeout = null;
 
     if (closeWriterBtn) {
         closeWriterBtn.addEventListener('click', () => {
             if (paperAudio) {
                 paperAudio.currentTime = 0;
                 paperAudio.play().catch(() => {});
-            }
-            // Save any pending changes before closing
-            if (activeEditorId) {
-                flushSave();
             }
             writerModal.style.display = 'none';
             activeEditorId = null;
@@ -523,8 +498,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function openLetterWriter(id) {
-        if (!currentUser) return;
-        const letterData = lettersCache.find(l => l.id === id);
+        if (!currentUserEmail) return;
+        const db = getUsersDB();
+        if (!db[currentUserEmail] || !db[currentUserEmail].letters) return;
+
+        const letterData = db[currentUserEmail].letters.find(l => l.id === id);
         if (!letterData) return;
 
         // Random quote
@@ -573,34 +551,6 @@ document.addEventListener('DOMContentLoaded', () => {
         writerPaperMiddle.style.minHeight = Math.max(minHeight, contentHeight + 80) + 'px';
     }
 
-    // Debounced save to server
-    function saveActiveLetterProperty(key, value) {
-        if (!activeEditorId || !currentUser) return;
-        // Update local cache immediately
-        const letter = lettersCache.find(l => l.id === activeEditorId);
-        if (letter) {
-            letter[key] = value;
-        }
-        // Debounce API call
-        clearTimeout(saveTimeout);
-        saveTimeout = setTimeout(() => flushSave(), 800);
-    }
-
-    async function flushSave() {
-        if (!activeEditorId) return;
-        const letter = lettersCache.find(l => l.id === activeEditorId);
-        if (!letter) return;
-        try {
-            await api('PUT', `/api/letters/${activeEditorId}`, {
-                content: letter.content,
-                fontFamily: letter.fontFamily,
-                fontSize: letter.fontSize
-            });
-        } catch (e) {
-            console.error('Failed to save letter:', e);
-        }
-    }
-
     // Contenteditable autosave + auto-resize
     if (writerContent) {
         writerContent.addEventListener('input', () => {
@@ -622,7 +572,6 @@ document.addEventListener('DOMContentLoaded', () => {
         writerPaperMiddle.addEventListener('click', (e) => {
             if (e.target === writerPaperMiddle) {
                 writerContent.focus();
-                // Place cursor at end
                 const sel = window.getSelection();
                 sel.selectAllChildren(writerContent);
                 sel.collapseToEnd();
@@ -643,6 +592,16 @@ document.addEventListener('DOMContentLoaded', () => {
             saveActiveLetterProperty('fontSize', writerSizeOpt.value);
             requestAnimationFrame(autoResizePaper);
         });
+    }
+
+    function saveActiveLetterProperty(key, value) {
+        if (!activeEditorId || !currentUserEmail) return;
+        const db = getUsersDB();
+        const letterIndex = db[currentUserEmail].letters.findIndex(l => l.id === activeEditorId);
+        if (letterIndex !== -1) {
+            db[currentUserEmail].letters[letterIndex][key] = value;
+            saveUserDB(db);
+        }
     }
 
     // ==========================================
@@ -695,9 +654,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Generate share link
     if (shareGenerateBtn) {
         shareGenerateBtn.addEventListener('click', () => {
-            if (!activeEditorId || !currentUser) return;
+            if (!activeEditorId || !currentUserEmail) return;
 
-            const letterData = lettersCache.find(l => l.id === activeEditorId);
+            const db = getUsersDB();
+            const letterData = db[currentUserEmail].letters.find(l => l.id === activeEditorId);
             if (!letterData) return;
 
             const secretCode = shareCodeInput.value.trim();
@@ -801,7 +761,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function openReadOnlyLetter(letterItem) {
-        // Reuse the writer modal in read-only mode
         const letterImgPath = `Letters Options/${letterItem.letterFile || letterItem.file || ''}`;
         writerTopImg.src = letterImgPath;
         writerBottomImg.src = letterImgPath;
@@ -810,11 +769,10 @@ document.addEventListener('DOMContentLoaded', () => {
         writerContent.style.fontFamily = letterItem.fontFamily || "'Caveat', cursive";
         writerContent.style.fontSize = letterItem.fontSize || "1.3rem";
         writerModal.style.display = 'flex';
-        activeEditorId = null; // prevent saving
+        activeEditorId = null;
 
         requestAnimationFrame(autoResizePaper);
 
-        // Restore editable on close
         const restoreHandler = () => {
             writerContent.contentEditable = 'true';
             closeWriterBtn.removeEventListener('click', restoreHandler);
@@ -827,7 +785,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     const nickInput = document.getElementById('nickname-input');
     const profileNickInput = document.getElementById('profile-nickname-input');
-    let nickSaveTimeout = null;
 
     if (nickInput) {
         nickInput.addEventListener('input', (e) => unifyNicknames(e.target.value));
@@ -837,24 +794,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     window.unifyNicknames = function (newVal) {
-        if (!currentUser) return;
-        currentUser.nickname = newVal;
-
+        if (!currentUserEmail) return;
+        const db = getUsersDB();
+        if (db[currentUserEmail]) {
+            db[currentUserEmail].nickname = newVal;
+            saveUserDB(db);
+        }
         if (nickInput && nickInput.value !== newVal) nickInput.value = newVal;
         if (profileNickInput && profileNickInput.value !== newVal) profileNickInput.value = newVal;
 
         renderPhantomNickname(nickInput, document.getElementById('phantom-wavy-display'), "Please create the most silliest nickname", true);
         renderPhantomNickname(profileNickInput, document.getElementById('profile-phantom-wavy'), "Please create the most silliest nickname", false);
-
-        // Debounce API save
-        clearTimeout(nickSaveTimeout);
-        nickSaveTimeout = setTimeout(async () => {
-            try {
-                await api('PUT', '/api/user', { nickname: newVal });
-            } catch (e) {
-                console.error('Failed to save nickname:', e);
-            }
-        }, 500);
     };
 
     window.renderPhantomNickname = function (inputEl, phantomEl, placeholderText, scaleWidth) {
@@ -881,7 +831,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const blurHandler = () => {
-        // Save handled by debounce already
+        if (!currentUserEmail) return;
+        const db = getUsersDB();
+        if (db[currentUserEmail]) saveUserDB(db);
     };
 
     if (nickInput) {
@@ -952,20 +904,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
-        logoutBtn.addEventListener('click', async () => {
+        logoutBtn.addEventListener('click', () => {
             const logout = confirm('Are you sure you want to log out?');
             if (logout) {
-                try {
-                    await api('POST', '/api/logout');
-                } catch (e) {
-                    // Even if API fails, clear locally
-                }
-                localStorage.removeItem('iLetterU_token');
-                sessionToken = null;
-                currentUser = null;
-                lettersCache = [];
-                inboxCache = [];
-
+                localStorage.removeItem('iLetterU_session');
+                currentUserEmail = null;
                 appContainer.style.display = 'none';
                 loginScreen.style.display = 'flex';
                 loginScreen.style.animation = 'fadeIn 0.6s ease';
